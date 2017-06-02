@@ -295,6 +295,7 @@ PRIVATE int allocf(void)
 	int i;      /* Loop index.  */
 	int oldest; /* Oldest page. */
 	
+	/* Macro que testa se uma moldura é mais velha que a outra baseado no número de clocks */
 	#define OLDEST(x, y) (frames[x].age < frames[y].age)
 	
 	/* Search for a free frame. */
