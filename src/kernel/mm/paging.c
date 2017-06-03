@@ -29,6 +29,9 @@
 #include <signal.h>
 #include "mm.h"
 
+/* Variável global */
+int ponteiro = 0; /* do relógio */
+
 /*
  * Swapping area too small?
  */
@@ -282,7 +285,8 @@ PRIVATE struct
 	unsigned age;   /**< Age.                 */
 	pid_t owner;    /**< Page owner.          */
 	addr_t addr;    /**< Address of the page. */
-} frames[NR_FRAMES] = {{0, 0, 0, 0},  };
+	unsigned bitR;
+} frames[NR_FRAMES] = {{0, 0, 0, 0, 0},  };
 
 /**
  * @brief Allocates a page frame.
@@ -292,47 +296,63 @@ PRIVATE struct
  */
 PRIVATE int allocf(void)
 {
-	int i;      /* Loop index.  */
 	int oldest; /* Oldest page. */
+	int temp; /* variável auxiliar */
 	
 	/* Macro que testa se uma moldura é mais velha que a outra baseado no número de clocks */
 	#define OLDEST(x, y) (frames[x].age < frames[y].age)
 	
 	/* Search for a free frame. */
 	oldest = -1;
-	for (i = 0; i < NR_FRAMES; i++)
+
+	// for (i = 0; i < NR_FRAMES; i++)
+	while(ponteiro <= NR_FRAMES)
 	{
-		/* Found it. */
-		if (frames[i].count == 0)
-			goto found;
-		
-		/* Local page replacement policy. */
-		if (frames[i].owner == curr_proc->pid)
-		{
-			/* Skip shared pages. */
-			if (frames[i].count > 1)
-				continue;
-			
-			/* Oldest page found. */
-			if ((oldest < 0) || (OLDEST(i, oldest)))
-				oldest = i;
+		if(ponteiro == NR_FRAMES) { /* simulando uma lista circular */
+			ponteiro = 0;
 		}
+
+		/* Found it. */
+		if (frames[ponteiro].count == 0) { /* Se achou uma moldura livre */
+			goto found;
+		} else if (frames[ponteiro].bitR == 1) { /* Se bit R = 1, seta bit R = 0 */
+			frames[ponteiro].bitR = 0;
+			ponteiro = ponteiro + 1; /* avança o ponteiro */
+		} else if (frames[ponteiro].bitR == 0) {
+			/* Swap page out. */
+			if (swap_out(curr_proc, frames[ponteiro].addr)) { /* tenta fazer o swap */
+				return (-1); /* se der erro retorna -1 */
+			} else {
+				goto found; /* se funcionar procede para a label found */
+			}
+		}
+
+		// /* Local page replacement policy. */
+		// if (frames[ponteiro].owner == curr_proc->pid)
+		// {
+		// 	/* Skip shared pages. */
+		// 	if (frames[ponteiro].count > 1)
+		// 		continue;
+			
+		// 	/* Oldest page found. */
+		// 	if ((oldest < 0) || (OLDEST(ponteiro, oldest)))
+		// 		oldest = ponteiro;
+		// }
 	}
 	
 	/* No frame left. */
 	if (oldest < 0)
 		return (-1);
 	
-	/* Swap page out. */
-	if (swap_out(curr_proc, frames[i = oldest].addr))
-		return (-1);
-	
 found:		
 
-	frames[i].age = ticks;
-	frames[i].count = 1;
-	
-	return (i);
+	frames[ponteiro].age = ticks;
+	frames[ponteiro].count = 1;
+	frames[ponteiro].bitR = 1;
+	temp = ponteiro; /* guarda o ponteiro atual numa variável temporária */
+	ponteiro = ponteiro + 1; /* avança o ponteiro */
+
+	return (temp);
 }
 
 /**
