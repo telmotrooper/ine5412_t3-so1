@@ -29,9 +29,9 @@
 #include <signal.h>
 #include "mm.h"
 
+
 /* Variável global */
 int ponteiro = 0; /* do relógio */
-
 /*
  * Swapping area too small?
  */
@@ -275,94 +275,110 @@ PUBLIC void putkpg(void *kpg)
 
 /* Number of page frames. */
 #define NR_FRAMES (UMEM_SIZE/PAGE_SIZE)
-
+ 
 /**
  * @brief Page frames.
  */
 PRIVATE struct
 {
-	unsigned count; /**< Reference count.     */
-	unsigned age;   /**< Age.                 */
-	pid_t owner;    /**< Page owner.          */
-	addr_t addr;    /**< Address of the page. */
-	unsigned bitR;
-} frames[NR_FRAMES] = {{0, 0, 0, 0, 0},  };
-
+    unsigned count; /**< Reference count.     */
+    unsigned age;   /**< Age.                 */
+    pid_t owner;    /**< Page owner.          */
+    addr_t addr;    /**< Address of the page. */
+} frames[NR_FRAMES] = {{0, 0, 0, 0},  };
+ 
 /**
  * @brief Allocates a page frame.
- * 
+ *
  * @returns Upon success, the number of the frame is returned. Upon failure, a
  *          negative number is returned instead.
  */
 PRIVATE int allocf(void)
 {
-	int oldest; /* Oldest page. */
-	int temp; /* variável auxiliar */
-	
-	/* Macro que testa se uma moldura é mais velha que a outra baseado no número de clocks */
-	#define OLDEST(x, y) (frames[x].age < frames[y].age)
-	
-	/* Search for a free frame. */
-	oldest = -1;
 
-	// for (i = 0; i < NR_FRAMES; i++)
-	while(ponteiro <= NR_FRAMES)
-	{
-		if(ponteiro == NR_FRAMES) { /* simulando uma lista circular */
-			ponteiro = 0;
+    int temp; /* variável auxiliar */
+	struct pte *pg;
+ 	addr_t addr_aux;
+	int ponteiro_inicial;
+	int volta;
+	int num_voltas = 0;
+   
+    /* Macro que testa se uma moldura é mais velha que a outra baseado no número de clocks */
+    //#define OLDEST(x, y) (frames[x].age < frames[y].age)
+
+	ponteiro_inicial = ponteiro;
+	volta = 0;
+    while(ponteiro <= NR_FRAMES)
+    {
+		if(num_voltas == NR_FRAMES+1) { /* se não achou nenhuma moldura livre */
+			return (-1);
+		} else {
+			num_voltas = num_voltas + 1;
 		}
 
-		/* Found it. */
-		if (frames[ponteiro].count == 0) { /* Se achou uma moldura livre */
-			goto found;
-		} else if (frames[ponteiro].bitR == 1) { /* Se bit R = 1, seta bit R = 0 */
-			frames[ponteiro].bitR = 0;
-			ponteiro = ponteiro + 1; /* avança o ponteiro */
-		} else if (frames[ponteiro].bitR == 0) {
-			/* Swap page out. */
-			if (swap_out(curr_proc, frames[ponteiro].addr)) { /* tenta fazer o swap */
-				return (-1); /* se der erro retorna -1 */
+		if(volta == 2 && ponteiro == ponteiro_inicial) {
+			break;
+		}
+        if(ponteiro == NR_FRAMES) { /* simulando uma lista circular */
+            ponteiro = 0;
+			volta++;
+			continue;
+        } else {
+ 
+        	/* Found it. */
+        	if (frames[ponteiro].count == 0) { /* Se achou uma moldura livre */
+            	goto found;
+
+			} else if (frames[ponteiro].owner == curr_proc->pid) {
+				if (frames[ponteiro].count > 1) {
+					ponteiro = ponteiro + 1;
+					continue;
+				}
+
+				addr_aux = frames[ponteiro].addr;
+    			addr_aux &= PAGE_MASK;
+    			pg = getpte(curr_proc, addr_aux);
+    			
+				if (pg->accessed == 0) { /* Se bit R = 1, seta bit R = 0 */
+        	    	pg->accessed = 1;
+        	    	ponteiro = ponteiro + 1; /* avança o ponteiro */
+        		} else if (pg->accessed == 1) {
+        	    	goto rm;
+        		}
 			} else {
-				goto found; /* se funcionar procede para a label found */
+				ponteiro = ponteiro + 1;
 			}
 		}
+    }
 
-		// /* Local page replacement policy. */
-		// if (frames[ponteiro].owner == curr_proc->pid)
-		// {
-		// 	/* Skip shared pages. */
-		// 	if (frames[ponteiro].count > 1)
-		// 		continue;
-			
-		// 	/* Oldest page found. */
-		// 	if ((oldest < 0) || (OLDEST(ponteiro, oldest)))
-		// 		oldest = ponteiro;
-		// }
+rm:
+
+	if (volta == 2 && ponteiro == ponteiro_inicial) {
+    	return (-1);
 	}
-	
-	/* No frame left. */
-	if (oldest < 0)
-		return (-1);
-	
-found:		
 
-	frames[ponteiro].age = ticks;
-	frames[ponteiro].count = 1;
-	frames[ponteiro].bitR = 1;
-	temp = ponteiro; /* guarda o ponteiro atual numa variável temporária */
-	ponteiro = ponteiro + 1; /* avança o ponteiro */
-
-	return (temp);
+	if (swap_out(curr_proc, frames[ponteiro].addr)) {
+    	return (-1);
+	}
+   
+found:     
+ 
+    frames[ponteiro].age = ticks;
+    frames[ponteiro].count = 1;
+    temp = ponteiro; /* guarda o ponteiro atual numa variável temporária */
+    ponteiro = ponteiro + 1; /* avança o ponteiro */
+ 
+    return (temp);
 }
-
+ 
 /**
  * @brief Copies a page.
- * 
+ *
  * @brief pg1 Target page.
  * @brief pg2 Source page.
- * 
+ *
  * @returns Zero upon successful completion, and non-zero otherwise.
- * 
+ *
  * @note The source page is assumed to be in-core.
  */
 PRIVATE int cpypg(struct pte *pg1, struct pte *pg2)
