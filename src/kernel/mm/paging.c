@@ -29,9 +29,6 @@
 #include <signal.h>
 #include "mm.h"
 
-
-/* Variável global */
-int ponteiro = 0; /* do relógio */
 /*
  * Swapping area too small?
  */
@@ -286,7 +283,10 @@ PRIVATE struct
     pid_t owner;    /**< Page owner.          */
     addr_t addr;    /**< Address of the page. */
 } frames[NR_FRAMES] = {{0, 0, 0, 0},  };
- 
+
+/* Ponteiro do relógio */
+int ponteiro = 0;
+
 /**
  * @brief Allocates a page frame.
  *
@@ -295,56 +295,56 @@ PRIVATE struct
  */
 PRIVATE int allocf(void)
 {
-
-    int temp; /* variável auxiliar */
-	struct pte *pg;
- 	addr_t addr_aux;
+    int temp; /* Variável auxiliar */
+	struct pte* pg;
+ 	addr_t addr;
 	int ponteiro_inicial;
 	int volta;
-	int num_voltas = 0;
-   
-    /* Macro que testa se uma moldura é mais velha que a outra baseado no número de clocks */
-    //#define OLDEST(x, y) (frames[x].age < frames[y].age)
 
 	ponteiro_inicial = ponteiro;
 	volta = 0;
     while(ponteiro <= NR_FRAMES)
     {
-		if(num_voltas == NR_FRAMES+1) { /* se não achou nenhuma moldura livre */
-			return (-1);
-		} else {
-			num_voltas = num_voltas + 1;
-		}
-
+		/* Se deu uma volta no relógio e não encontrou uma moldura livre */
 		if(volta == 2 && ponteiro == ponteiro_inicial) {
 			break;
 		}
-        if(ponteiro == NR_FRAMES) { /* simulando uma lista circular */
+
+ 		/* Simulando uma lista circular */
+        if(ponteiro == NR_FRAMES) {
             ponteiro = 0;
 			volta++;
 			continue;
         } else {
- 
-        	/* Found it. */
-        	if (frames[ponteiro].count == 0) { /* Se achou uma moldura livre */
+        	/* Se uma moldura livre foi encontrada */
+        	if (frames[ponteiro].count == 0) {
             	goto found;
-
+			
+			/* Se o processo atual é dono da moldura atual */
 			} else if (frames[ponteiro].owner == curr_proc->pid) {
+				/* Pula molduras compartilhadas */
 				if (frames[ponteiro].count > 1) {
 					ponteiro = ponteiro + 1;
 					continue;
 				}
 
-				addr_aux = frames[ponteiro].addr;
-    			addr_aux &= PAGE_MASK;
-    			pg = getpte(curr_proc, addr_aux);
+				/* Calcula o endereço da página que está na moldura */
+				addr = frames[ponteiro].addr;
+    			addr &= PAGE_MASK;
+    			pg = getpte(curr_proc, addr);
     			
-				if (pg->accessed == 0) { /* Se bit R = 1, seta bit R = 0 */
+				/* Obs: nós invertemos o funcionamento do bit R */
+
+				/* Se bit R = 0, seta bit R = 1 */
+				if (pg->accessed == 0) { 
         	    	pg->accessed = 1;
         	    	ponteiro = ponteiro + 1; /* avança o ponteiro */
+
+				/* Se bit R = 1, remove a página */
         		} else if (pg->accessed == 1) {
         	    	goto rm;
         		}
+			/* Se o processo atual não é dono da moldura atual */
 			} else {
 				ponteiro = ponteiro + 1;
 			}
@@ -352,22 +352,21 @@ PRIVATE int allocf(void)
     }
 
 rm:
-
+	/* Se deu uma volta no relógio e não encontrou uma moldura livre */
 	if (volta == 2 && ponteiro == ponteiro_inicial) {
     	return (-1);
 	}
 
+	/* Tenta remover a página da moldura */
 	if (swap_out(curr_proc, frames[ponteiro].addr)) {
     	return (-1);
 	}
    
 found:     
- 
     frames[ponteiro].age = ticks;
     frames[ponteiro].count = 1;
     temp = ponteiro; /* guarda o ponteiro atual numa variável temporária */
     ponteiro = ponteiro + 1; /* avança o ponteiro */
- 
     return (temp);
 }
  
